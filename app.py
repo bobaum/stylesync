@@ -111,6 +111,10 @@ def delete_item(item_id: str, image_url: str):
         pass
     supabase.table("wardrobe_items").delete().eq("id", item_id).execute()
 
+def update_item_category(item_id: str, new_category: str):
+    """Ändert nachträglich die Kategorie eines Kleidungsstücks in Supabase."""
+    supabase.table("wardrobe_items").update({"category": new_category}).eq("id", item_id).execute()
+
 def trim_transparent_borders(img: Image.Image) -> Image.Image:
     """Schneidet alle leeren/transparenten Ränder exakt am Kleidungsstück ab."""
     if img.mode != "RGBA":
@@ -206,9 +210,9 @@ def recrop_existing_items(items: list):
         except Exception as e:
             st.error(f"Fehler beim Optimieren: {e}")
 
-# --- 4. KARUSSELL-ZEILE (MIT SEITLICHER VORSCHAU WIE IM VORBILD) ---
+# --- 4. KARUSSELL-ZEILE (MIT SEITLICHER VORSCHAU & LOCK-PIN) ---
 def render_carousel_row(category_label: str, items: list, state_key: str, main_width: int, side_width: int):
-    """Rendert: [Vorschau links] [◀] [Hauptbild] [▶] [Vorschau rechts] in einer Zeile."""
+    """Rendert: [Vorschau links] [‹] [Hauptbild] [›] [Vorschau rechts] + Lock-Pin."""
     if not items:
         st.caption(f"Noch keine {category_label} vorhanden.")
         return None
@@ -216,31 +220,41 @@ def render_carousel_row(category_label: str, items: list, state_key: str, main_w
     if state_key not in st.session_state:
         st.session_state[state_key] = 0
 
+    lock_key = f"lock_{state_key}"
+    if lock_key not in st.session_state:
+        st.session_state[lock_key] = False
+
     n = len(items)
     idx = st.session_state[state_key] % n
     current_item = items[idx]
     prev_item = items[(idx - 1) % n]
     next_item = items[(idx + 1) % n]
+    is_locked = st.session_state[lock_key]
 
     col_prev, col_left, col_main, col_right, col_next = st.columns(
-        [0.9, 0.7, 3.6, 0.7, 0.9], vertical_alignment="center"
+        [0.9, 0.8, 3.4, 0.8, 0.9], vertical_alignment="center"
     )
 
     with col_prev:
-        if n > 1:
+        if n > 1 and not is_locked:
             st.image(prev_item["image_url"], width=side_width)
     with col_left:
-        if st.button("‹", key=f"prev_{state_key}", use_container_width=True, disabled=(n <= 1)):
+        if st.button("‹", key=f"prev_{state_key}", use_container_width=True, disabled=(n <= 1 or is_locked)):
             st.session_state[state_key] = (idx - 1) % n
+            st.rerun()
+        # Dezenter Lock-Pin direkt unter dem linken Pfeil
+        lock_icon = "🔒" if is_locked else "🔓"
+        if st.button(lock_icon, key=f"btn_{lock_key}", use_container_width=True, help=f"{category_label} beim Shuffle fixieren"):
+            st.session_state[lock_key] = not is_locked
             st.rerun()
     with col_main:
         st.image(current_item["image_url"], width=main_width)
     with col_right:
-        if st.button("›", key=f"next_{state_key}", use_container_width=True, disabled=(n <= 1)):
+        if st.button("›", key=f"next_{state_key}", use_container_width=True, disabled=(n <= 1 or is_locked)):
             st.session_state[state_key] = (idx + 1) % n
             st.rerun()
     with col_next:
-        if n > 1:
+        if n > 1 and not is_locked:
             st.image(next_item["image_url"], width=side_width)
 
     return current_item
@@ -264,16 +278,20 @@ with tab_swiper:
     pants = [i for i in all_items if str(i.get("category", "")).strip() == "Hose"]
     shoes = [i for i in all_items if str(i.get("category", "")).strip() == "Schuhe"]
 
-    # Obere Kontrollleiste (inkl. Save-Popover ohne Konflikt mit dem Streamlit-Badge unten rechts)
     top_1, top_2 = st.columns([1, 1], vertical_alignment="center")
     with top_1:
         include_jacket = st.toggle("🧥 + Jacke", value=False)
     with top_2:
         if st.button("⇅ Shuffle", use_container_width=True):
-            if tops: st.session_state["idx_top"] = random.randint(0, len(tops) - 1)
-            if jackets: st.session_state["idx_jacket"] = random.randint(0, len(jackets) - 1)
-            if pants: st.session_state["idx_pants"] = random.randint(0, len(pants) - 1)
-            if shoes: st.session_state["idx_shoes"] = random.randint(0, len(shoes) - 1)
+            # Würfelt nur Kategorien neu aus, die NICHT per 🔒 gesperrt sind
+            if tops and not st.session_state.get("lock_idx_top", False):
+                st.session_state["idx_top"] = random.randint(0, len(tops) - 1)
+            if jackets and not st.session_state.get("lock_idx_jacket", False):
+                st.session_state["idx_jacket"] = random.randint(0, len(jackets) - 1)
+            if pants and not st.session_state.get("lock_idx_pants", False):
+                st.session_state["idx_pants"] = random.randint(0, len(pants) - 1)
+            if shoes and not st.session_state.get("lock_idx_shoes", False):
+                st.session_state["idx_shoes"] = random.randint(0, len(shoes) - 1)
             st.rerun()
 
     selected_ids = []
@@ -304,7 +322,7 @@ with tab_swiper:
                     }).execute()
                     st.success("Gespeichert im Tab '⭐ Outfits'!")
 
-# === TAB 2: KLEIDERSCHRANK-GALERIE (INKL. 90°-DREHEN) ===
+# === TAB 2: KLEIDERSCHRANK-GALERIE (INKL. KATEGORIE-WECHSEL & 90°-DREHEN) ===
 with tab_closet:
     if not all_items:
         st.info("Dein Kleiderschrank ist noch leer. Wechsle zum Tab '➕ Upload'!")
@@ -322,7 +340,21 @@ with tab_closet:
             with cols[idx % 2]:
                 with st.container(border=True):
                     st.image(item["image_url"], use_container_width=True)
-                    st.caption(f"**{item.get('category', 'Unbekannt')}**")
+                    
+                    # Direktes Ändern der Kategorie per Dropdown
+                    current_cat = str(item.get("category", "Oberteil")).strip()
+                    cat_index = CATEGORIES.index(current_cat) if current_cat in CATEGORIES else 0
+                    new_cat = st.selectbox(
+                        "Kategorie",
+                        options=CATEGORIES,
+                        index=cat_index,
+                        key=f"cat_{item['id']}",
+                        label_visibility="collapsed"
+                    )
+                    if new_cat != current_cat:
+                        update_item_category(item["id"], new_cat)
+                        st.rerun()
+
                     b1, b2 = st.columns(2)
                     with b1:
                         if st.button("🔄 90°", key=f"rot_{item['id']}", use_container_width=True):
