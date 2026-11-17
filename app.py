@@ -252,4 +252,140 @@ all_items = fetch_wardrobe()
 
 tab_swiper, tab_closet, tab_saved, tab_upload = st.tabs([
     "👗 Dress Me", 
-    f"🗄️ Schrank ({len(all_items)})
+    f"🗄️ Schrank ({len(all_items)})", 
+    "⭐ Outfits", 
+    "➕ Upload"
+])
+
+# === TAB 1: OUTFIT SWIPER ===
+with tab_swiper:
+    tops = [i for i in all_items if str(i.get("category", "")).strip() == "Oberteil"]
+    jackets = [i for i in all_items if str(i.get("category", "")).strip() == "Jacke"]
+    pants = [i for i in all_items if str(i.get("category", "")).strip() == "Hose"]
+    shoes = [i for i in all_items if str(i.get("category", "")).strip() == "Schuhe"]
+
+    # Obere Kontrollleiste (inkl. Save-Popover ohne Konflikt mit dem Streamlit-Badge unten rechts)
+    top_1, top_2 = st.columns([1, 1], vertical_alignment="center")
+    with top_1:
+        include_jacket = st.toggle("🧥 + Jacke", value=False)
+    with top_2:
+        if st.button("⇅ Shuffle", use_container_width=True):
+            if tops: st.session_state["idx_top"] = random.randint(0, len(tops) - 1)
+            if jackets: st.session_state["idx_jacket"] = random.randint(0, len(jackets) - 1)
+            if pants: st.session_state["idx_pants"] = random.randint(0, len(pants) - 1)
+            if shoes: st.session_state["idx_shoes"] = random.randint(0, len(shoes) - 1)
+            st.rerun()
+
+    selected_ids = []
+    if include_jacket:
+        sel_jacket = render_carousel_row("Jacke", jackets, "idx_jacket", main_width=150, side_width=38)
+        if sel_jacket: selected_ids.append(sel_jacket["id"])
+
+    sel_top = render_carousel_row("Oberteil", tops, "idx_top", main_width=165, side_width=42)
+    if sel_top: selected_ids.append(sel_top["id"])
+
+    sel_pants = render_carousel_row("Hose", pants, "idx_pants", main_width=170, side_width=40)
+    if sel_pants: selected_ids.append(sel_pants["id"])
+
+    sel_shoes = render_carousel_row("Schuhe", shoes, "idx_shoes", main_width=115, side_width=34)
+    if sel_shoes: selected_ids.append(sel_shoes["id"])
+
+    # Kollisionsfreie Speichern-Box (linksbündig mit Platz zum roten Streamlit-Badge rechts)
+    if len(selected_ids) >= 2:
+        st.write("")
+        c_save_area, c_badge_spacer = st.columns([3.8, 1.2], vertical_alignment="center")
+        with c_save_area:
+            with st.popover("💾 Outfit speichern", use_container_width=True):
+                outfit_name = st.text_input("Name für den Look:", placeholder="z.B. Clean Uni Look")
+                if st.button("✅ Jetzt speichern", type="primary", use_container_width=True):
+                    supabase.table("saved_outfits").insert({
+                        "outfit_name": outfit_name or "Saved Look",
+                        "item_ids": selected_ids
+                    }).execute()
+                    st.success("Gespeichert im Tab '⭐ Outfits'!")
+
+# === TAB 2: KLEIDERSCHRANK-GALERIE (INKL. 90°-DREHEN) ===
+with tab_closet:
+    if not all_items:
+        st.info("Dein Kleiderschrank ist noch leer. Wechsle zum Tab '➕ Upload'!")
+    else:
+        filter_cat = st.radio("Filter:", ["Alle"] + CATEGORIES, horizontal=True)
+        if filter_cat == "Alle":
+            filtered = all_items
+        else:
+            filtered = [i for i in all_items if str(i.get("category", "")).strip() == filter_cat]
+
+        st.caption(f"Zeige {len(filtered)} von {len(all_items)} Kleidungsstück(en)")
+
+        cols = st.columns(2)
+        for idx, item in enumerate(filtered):
+            with cols[idx % 2]:
+                with st.container(border=True):
+                    st.image(item["image_url"], use_container_width=True)
+                    st.caption(f"**{item.get('category', 'Unbekannt')}**")
+                    b1, b2 = st.columns(2)
+                    with b1:
+                        if st.button("🔄 90°", key=f"rot_{item['id']}", use_container_width=True):
+                            with st.spinner("Drehe..."):
+                                rotate_existing_item(item)
+                            st.rerun()
+                    with b2:
+                        if st.button("🗑️", key=f"del_{item['id']}", use_container_width=True):
+                            delete_item(item["id"], item["image_url"])
+                            st.rerun()
+
+        st.divider()
+        if st.button("✨ Bestehende Bilder schärfen & zuschneiden (Studio-Boost)", use_container_width=True):
+            with st.spinner("Optimiere bestehende Bilder..."):
+                recrop_existing_items(all_items)
+            st.success("✅ Alle Bilder optimiert!")
+            st.rerun()
+
+# === TAB 3: GESPEICHERTE OUTFITS ===
+with tab_saved:
+    outfits = fetch_saved_outfits()
+    items_by_id = {i["id"]: i for i in all_items}
+
+    if not outfits:
+        st.info("Noch keine Outfits gespeichert.")
+    else:
+        for outfit in outfits:
+            with st.container(border=True):
+                head_1, head_2 = st.columns([4, 1])
+                head_1.subheader(f"⭐ {outfit.get('outfit_name') or 'Look'}")
+                if head_2.button("🗑️", key=f"del_out_{outfit['id']}"):
+                    supabase.table("saved_outfits").delete().eq("id", outfit["id"]).execute()
+                    st.rerun()
+
+                o_items = [items_by_id[iid] for iid in outfit.get("item_ids", []) if iid in items_by_id]
+                if o_items:
+                    o_cols = st.columns(len(o_items))
+                    for c_idx, o_item in enumerate(o_items):
+                        with o_cols[c_idx]:
+                            st.image(o_item["image_url"], use_container_width=True)
+
+# === TAB 4: BATCH-UPLOAD ===
+with tab_upload:
+    selected_category = st.radio("1. Kategorie wählen:", options=CATEGORIES, horizontal=True)
+    uploaded_files = st.file_uploader(
+        f"2. Fotos für '{selected_category}' auswählen",
+        type=["jpg", "jpeg", "png", "webp", "heic", "heif"],
+        accept_multiple_files=True
+    )
+
+    if uploaded_files:
+        if st.button(f"✨ Alle {len(uploaded_files)} Bilder freistellen & speichern", type="primary", use_container_width=True):
+            progress_bar = st.progress(0, text="Starte Batch-Verarbeitung...")
+            success_count = 0
+            for idx, file in enumerate(uploaded_files):
+                try:
+                    progress_bar.progress(idx / len(uploaded_files), text=f"✂️ Freistellen & Studio-Boost: {file.name}...")
+                    cutout_img, png_bytes = process_and_remove_bg(file)
+                    save_item_to_cloud(png_bytes, selected_category)
+                    success_count += 1
+                except Exception as e:
+                    st.error(f"❌ Fehler bei {file.name}: {e}")
+            progress_bar.progress(1.0, text="✅ Durchlauf beendet!")
+            if success_count > 0:
+                st.success(f"🎉 {success_count} Teil(e) perfekt zugeschnitten & gespeichert!")
+                st.rerun()
