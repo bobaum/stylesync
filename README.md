@@ -2,9 +2,9 @@
 
 Hi, ich bin Bo und studiere Wirtschaftsinformatik an der Hochschule Osnabrück.
 
-Ich habe StyleSync gebaut, weil ich im Alltag eine schnelle, visuelle Lösung gesucht habe, um meine eigene Garderobe auf dem iPhone zu überblicken und morgens in Sekunden passende Outfits zusammenzustellen. Klassische Kleiderschrank-Apps scheitern oft daran, dass man jedes Teil mühsam einzeln abfotografieren, manuell ausschneiden und zig Datenfelder ausfüllen muss.
+Ich habe StyleSync gebaut, weil ich morgens auf dem iPhone schnell sehen wollte, was ich überhaupt im Schrank habe und wie ich meine Sachen gut kombinieren kann. Andere Apps waren mir dafür viel zu umständlich, weil man jedes Teil einzeln abfotografieren, ausschneiden und ewig viele Felder ausfüllen muss.
 
-Mir war es wichtig, neben meinem B2B-Projekt (*Personal Job Scout*) auch ein echtes **B2C- und Mobile-First-Produkt** in meinem Portfolio zu haben. Als Werkstudent im Bereich IT Operations lege ich großen Wert auf pragmatische Cloud-Architekturen, stabile Pipelines ohne externe API-Ausfälle und ein striktes Ressourcen- und FinOps-Management (0,00 € laufende Betriebskosten).
+Für mich war es außerdem spannend, nach meinem Job Scout auch mal eine kleine Anwendung direkt fürs Smartphone zu bauen. Mir ging es vor allem darum, dass die App im Alltag wirklich Spaß macht, ohne laufende Serverkosten auskommt und meine Fotos automatisch sauber freistellt.
 
 ## Was die App besonders macht
 
