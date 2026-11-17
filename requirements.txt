@@ -4,4 +4,3 @@ pillow
 pillow-heif
 rembg
 onnxruntime
-cryptography<45.0.0
