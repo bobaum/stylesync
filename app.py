@@ -14,39 +14,57 @@ try:
 except ImportError:
     pass
 
-# --- 1. KONFIGURATION & CLEAN STYLING (Ohne Kästen!) ---
+# --- 1. KONFIGURATION & MOBILE-FIRST STYLING ---
 st.set_page_config(page_title="StyleSync", page_icon="👕", layout="centered")
 
 BUCKET_NAME = "wardrobe-images"
 MAX_IMAGE_SIZE = (900, 900)
 CATEGORIES = ["Oberteil", "Hose", "Schuhe", "Jacke", "Accessoire"]
 
-# Kompaktes Mobile-Layout, Bilder frei schwebend ohne Rahmen/Kästen
 st.markdown("""
 <style>
     .block-container {
-        max-width: 480px !important;
-        padding-top: 1.5rem !important;
+        max-width: 460px !important;
+        padding-top: 1rem !important;
+        padding-bottom: 4rem !important;
     }
+    /* Zwingt Spalten auf dem iPhone nebeneinander zu bleiben (kein vertikales Stapeln) */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 0.35rem !important;
+    }
+    div[data-testid="stColumn"] {
+        min-width: 0px !important;
+        flex: 1 1 auto !important;
+    }
+    /* Bilder zentrieren & Abstände kompakt halten */
     div[data-testid="stImage"] {
         display: flex;
         justify-content: center;
         align-items: center;
+        margin-bottom: -0.5rem;
     }
     div[data-testid="stImage"] img {
         object-fit: contain;
-        filter: drop-shadow(0px 6px 14px rgba(0,0,0,0.35));
+        filter: drop-shadow(0px 5px 10px rgba(0,0,0,0.18));
     }
-    button[title="View fullscreen"] {
+    /* Versteckt das Vollbild-Icon auf den Bildern */
+    button[title="View fullscreen"], [data-testid="StyledFullScreenButton"] {
         display: none !important;
     }
+    /* Kompakte runde Buttons für Mobile */
     div.stButton > button {
         border-radius: 999px;
+        padding: 0.25rem 0.5rem !important;
+        min-height: 38px !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SUPABASE CLIENT ---
+# --- 2. SUPABASE CLIENT & REMBG SESSION (GECACHED) ---
 @st.cache_resource
 def init_supabase() -> Client:
     try:
@@ -58,6 +76,12 @@ def init_supabase() -> Client:
         st.stop()
 
 supabase = init_supabase()
+
+@st.cache_resource
+def get_rembg_session():
+    """Lädt das leichtgewichtige u2netp-Modell einmalig in den RAM (verhindert Cloud-Crash)."""
+    from rembg import new_session
+    return new_session("u2netp")
 
 # --- 3. DATENBANK- & BILD-FUNKTIONEN (MIT AUTO-CROP) ---
 def fetch_wardrobe() -> list:
@@ -87,12 +111,6 @@ def trim_transparent_borders(img: Image.Image) -> Image.Image:
         return img.crop(bbox)
     return img
 
-@st.cache_resource
-def get_rembg_session():
-    """Lädt das leichtgewichtige u2netp-Modell einmalig in den RAM (verhindert Cloud-Crash)."""
-    from rembg import new_session
-    return new_session("u2netp")
-
 def process_and_remove_bg(uploaded_file) -> tuple:
     """Dreht, skaliert, entfernt den Hintergrund RAM-schonend und schneidet Ränder ab."""
     from rembg import remove
@@ -100,7 +118,6 @@ def process_and_remove_bg(uploaded_file) -> tuple:
     image = ImageOps.exif_transpose(image)
     image.thumbnail(MAX_IMAGE_SIZE, Image.Resampling.LANCZOS)
     
-    # Nutzt die gecachte Leichtgewicht-Session statt bei jedem Bild neu zu laden
     session = get_rembg_session()
     cutout_image = remove(image, session=session)
     cutout_image = trim_transparent_borders(cutout_image)
@@ -145,9 +162,9 @@ def recrop_existing_items(items: list):
         except Exception as e:
             st.error(f"Fehler beim Zuschneiden: {e}")
 
-# --- 4. KARUSSELL-ZEILE (FREI SCHWEBEND OHNE KASTEN) ---
+# --- 4. KARUSSELL-ZEILE (3 SPALTEN FÜR IPHONE) ---
 def render_carousel_row(category_label: str, items: list, state_key: str, main_width: int):
-    """Rendert die Kleidungsstücke frei schwebend mit nativem st.image."""
+    """Rendert ◀ | Kleidungsstück | ▶ garantiert nebeneinander (auch auf dem iPhone)."""
     if not items:
         st.caption(f"Noch keine {category_label} vorhanden.")
         return None
@@ -158,16 +175,9 @@ def render_carousel_row(category_label: str, items: list, state_key: str, main_w
     n = len(items)
     idx = st.session_state[state_key] % n
     current_item = items[idx]
-    prev_item = items[(idx - 1) % n]
-    next_item = items[(idx + 1) % n]
 
-    col_prev, col_left, col_main, col_right, col_next = st.columns(
-        [1, 0.8, 3.8, 0.8, 1], vertical_alignment="center"
-    )
+    col_left, col_main, col_right = st.columns([1, 4, 1], vertical_alignment="center")
 
-    with col_prev:
-        if n > 1:
-            st.image(prev_item["image_url"], width=55)
     with col_left:
         if st.button("◀", key=f"prev_{state_key}", use_container_width=True, disabled=(n <= 1)):
             st.session_state[state_key] = (idx - 1) % n
@@ -178,9 +188,6 @@ def render_carousel_row(category_label: str, items: list, state_key: str, main_w
         if st.button("▶", key=f"next_{state_key}", use_container_width=True, disabled=(n <= 1)):
             st.session_state[state_key] = (idx + 1) % n
             st.rerun()
-    with col_next:
-        if n > 1:
-            st.image(next_item["image_url"], width=55)
 
     return current_item
 
@@ -215,17 +222,18 @@ with tab_swiper:
             st.rerun()
 
     selected_ids = []
+    # Optimierte Breiten für einen kompletten Look auf einem Smartphone-Screen
     if include_jacket:
-        sel_jacket = render_carousel_row("Jacke", jackets, "idx_jacket", main_width=180)
+        sel_jacket = render_carousel_row("Jacke", jackets, "idx_jacket", main_width=155)
         if sel_jacket: selected_ids.append(sel_jacket["id"])
 
-    sel_top = render_carousel_row("Oberteil", tops, "idx_top", main_width=200)
+    sel_top = render_carousel_row("Oberteil", tops, "idx_top", main_width=165)
     if sel_top: selected_ids.append(sel_top["id"])
 
-    sel_pants = render_carousel_row("Hose", pants, "idx_pants", main_width=190)
+    sel_pants = render_carousel_row("Hose", pants, "idx_pants", main_width=175)
     if sel_pants: selected_ids.append(sel_pants["id"])
 
-    sel_shoes = render_carousel_row("Schuhe", shoes, "idx_shoes", main_width=135)
+    sel_shoes = render_carousel_row("Schuhe", shoes, "idx_shoes", main_width=125)
     if sel_shoes: selected_ids.append(sel_shoes["id"])
 
     if len(selected_ids) >= 2:
@@ -234,14 +242,14 @@ with tab_swiper:
         with c_name:
             outfit_name = st.text_input("Outfit-Name", placeholder="z.B. Clean Uni Look", label_visibility="collapsed")
         with c_save:
-            if st.button("💾 Save Outfit", type="primary", use_container_width=True):
+            if st.button("💾 Save", type="primary", use_container_width=True):
                 supabase.table("saved_outfits").insert({
                     "outfit_name": outfit_name or "Saved Look",
                     "item_ids": selected_ids
                 }).execute()
                 st.success("✅ Gespeichert!")
 
-# === TAB 2: KLEIDERSCHRANK-GALERIE (NATIVES ST.IMAGE) ===
+# === TAB 2: KLEIDERSCHRANK-GALERIE ===
 with tab_closet:
     if not all_items:
         st.info("Dein Kleiderschrank ist noch leer. Wechsle zum Tab '➕ Upload'!")
