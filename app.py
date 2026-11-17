@@ -14,7 +14,7 @@ try:
 except ImportError:
     pass
 
-# --- 1. KONFIGURATION & STUDIO-LOOK STYLING ---
+# --- 1. KONFIGURATION & SYMMETRISCHES MOBILE-STYLING ---
 st.set_page_config(page_title="StyleSync", page_icon="👕", layout="centered")
 
 BUCKET_NAME = "wardrobe-images"
@@ -25,28 +25,31 @@ st.markdown("""
 <style>
     .block-container {
         max-width: 430px !important;
-        padding-top: 0.8rem !important;
-        padding-bottom: 6rem !important;
+        padding-top: 0.6rem !important;
+        padding-bottom: 5rem !important;
     }
-    /* Spalten auf dem iPhone zwingend nebeneinander halten */
+    /* Spalten auf dem iPhone zwingend auf einer horizontalen Linie halten */
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         align-items: center !important;
-        gap: 0.15rem !important;
+        gap: 0.2rem !important;
     }
     div[data-testid="stColumn"] {
         min-width: 0px !important;
         flex: 1 1 auto !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
     }
-    /* Bilder flach & clean ohne Schlagschatten, minimaler vertikaler Abstand */
+    /* Bilder zentrieren & kompakte Abstände */
     div[data-testid="stImage"] {
         display: flex;
         justify-content: center;
         align-items: center;
-        margin-top: -0.35rem;
-        margin-bottom: -0.35rem;
+        margin-top: -0.25rem;
+        margin-bottom: -0.25rem;
     }
     div[data-testid="stImage"] img {
         object-fit: contain;
@@ -56,16 +59,18 @@ st.markdown("""
     button[title="View fullscreen"], [data-testid="StyledFullScreenButton"] {
         display: none !important;
     }
-    /* Dezente, fast unsichtbare Navigations-Buttons im Swiper */
+    /* Einheitliche Höhe für alle runden Mini-Buttons (‹, ›, 🔓) */
     div.stButton > button {
-        border-radius: 999px;
-        border: 1px solid rgba(128, 128, 128, 0.2) !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(128, 128, 128, 0.25) !important;
         background-color: transparent !important;
-        padding: 0.15rem 0.4rem !important;
-        min-height: 34px !important;
-        font-size: 0.85rem !important;
+        padding: 0px 4px !important;
+        height: 36px !important;
+        min-height: 36px !important;
+        font-size: 0.9rem !important;
+        line-height: 1 !important;
     }
-    /* Primäre Buttons (Save / Upload) weiterhin kräftig hervorheben */
+    /* Primäre Buttons kräftig hervorheben */
     div.stButton > button[kind="primary"] {
         background-color: #111111 !important;
         color: #FFFFFF !important;
@@ -94,7 +99,7 @@ def get_rembg_session():
     from rembg import new_session
     return new_session("u2netp")
 
-# --- 3. DATENBANK- & BILD-FUNKTIONEN (AUTO-CROP & STUDIO-BOOST) ---
+# --- 3. DATENBANK- & BILD-FUNKTIONEN ---
 def fetch_wardrobe() -> list:
     res = supabase.table("wardrobe_items").select("*").order("created_at", desc=True).execute()
     return res.data or []
@@ -112,11 +117,9 @@ def delete_item(item_id: str, image_url: str):
     supabase.table("wardrobe_items").delete().eq("id", item_id).execute()
 
 def update_item_category(item_id: str, new_category: str):
-    """Ändert nachträglich die Kategorie eines Kleidungsstücks in Supabase."""
     supabase.table("wardrobe_items").update({"category": new_category}).eq("id", item_id).execute()
 
 def trim_transparent_borders(img: Image.Image) -> Image.Image:
-    """Schneidet alle leeren/transparenten Ränder exakt am Kleidungsstück ab."""
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     alpha = img.split()[-1]
@@ -127,7 +130,6 @@ def trim_transparent_borders(img: Image.Image) -> Image.Image:
     return img
 
 def apply_studio_enhancement(img: Image.Image) -> Image.Image:
-    """Verleiht Handyfotos automatisch leichtes Studio-Licht (+Helligkeit, +Kontrast, +Schärfe)."""
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     r, g, b, a = img.split()
@@ -139,7 +141,6 @@ def apply_studio_enhancement(img: Image.Image) -> Image.Image:
     return Image.merge("RGBA", (r2, g2, b2, a))
 
 def process_and_remove_bg(uploaded_file) -> tuple:
-    """Dreht, skaliert, stellt frei, schneidet Ränder ab und optimiert Belichtung."""
     from rembg import remove
     image = Image.open(uploaded_file)
     image = ImageOps.exif_transpose(image)
@@ -169,7 +170,6 @@ def save_item_to_cloud(png_bytes: bytes, category: str):
     }).execute()
 
 def rotate_existing_item(item: dict):
-    """Dreht ein bereits hochgeladenes Kleidungsstück um 90 Grad im Uhrzeigersinn."""
     url = item["image_url"]
     with urllib.request.urlopen(url) as response:
         img = Image.open(io.BytesIO(response.read()))
@@ -188,7 +188,6 @@ def rotate_existing_item(item: dict):
     supabase.table("wardrobe_items").update({"image_url": new_url}).eq("id", item["id"]).execute()
 
 def recrop_existing_items(items: list):
-    """Schneidet bestehende Bilder nach und wendet den Studio-Boost an."""
     for item in items:
         try:
             url = item["image_url"]
@@ -210,9 +209,9 @@ def recrop_existing_items(items: list):
         except Exception as e:
             st.error(f"Fehler beim Optimieren: {e}")
 
-# --- 4. KARUSSELL-ZEILE (MIT SEITLICHER VORSCHAU & LOCK-PIN) ---
+# --- 4. SYMMETRISCHE KARUSSELL-ZEILE (EXAKT AUF EINER HÖHE) ---
 def render_carousel_row(category_label: str, items: list, state_key: str, main_width: int, side_width: int):
-    """Rendert: [Vorschau links] [‹] [Hauptbild] [›] [Vorschau rechts] + Lock-Pin."""
+    """Genau 1 Element pro Spalte -> ‹, Hauptbild, › und 🔒 liegen exakt auf einer Linie."""
     if not items:
         st.caption(f"Noch keine {category_label} vorhanden.")
         return None
@@ -228,11 +227,11 @@ def render_carousel_row(category_label: str, items: list, state_key: str, main_w
     idx = st.session_state[state_key] % n
     current_item = items[idx]
     prev_item = items[(idx - 1) % n]
-    next_item = items[(idx + 1) % n]
     is_locked = st.session_state[lock_key]
 
-    col_prev, col_left, col_main, col_right, col_next = st.columns(
-        [0.9, 0.8, 3.4, 0.8, 0.9], vertical_alignment="center"
+    # 5 gleichmäßig ausgerichtete Spalten mit jeweils nur 1 Widget
+    col_prev, col_left, col_main, col_right, col_lock = st.columns(
+        [0.85, 0.85, 3.6, 0.85, 0.85], vertical_alignment="center"
     )
 
     with col_prev:
@@ -242,25 +241,22 @@ def render_carousel_row(category_label: str, items: list, state_key: str, main_w
         if st.button("‹", key=f"prev_{state_key}", use_container_width=True, disabled=(n <= 1 or is_locked)):
             st.session_state[state_key] = (idx - 1) % n
             st.rerun()
-        # Dezenter Lock-Pin direkt unter dem linken Pfeil
-        lock_icon = "🔒" if is_locked else "🔓"
-        if st.button(lock_icon, key=f"btn_{lock_key}", use_container_width=True, help=f"{category_label} beim Shuffle fixieren"):
-            st.session_state[lock_key] = not is_locked
-            st.rerun()
     with col_main:
         st.image(current_item["image_url"], width=main_width)
     with col_right:
         if st.button("›", key=f"next_{state_key}", use_container_width=True, disabled=(n <= 1 or is_locked)):
             st.session_state[state_key] = (idx + 1) % n
             st.rerun()
-    with col_next:
-        if n > 1 and not is_locked:
-            st.image(next_item["image_url"], width=side_width)
+    with col_lock:
+        lock_icon = "🔒" if is_locked else "🔓"
+        if st.button(lock_icon, key=f"btn_{lock_key}", use_container_width=True):
+            st.session_state[lock_key] = not is_locked
+            st.rerun()
 
     return current_item
 
 # --- 5. HAUPT-OBERFLÄCHE ---
-st.markdown("<h2 style='text-align: center; font-family: serif; letter-spacing: -0.5px; margin-bottom: 0.1rem;'>Dress Me</h2>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; font-family: serif; margin-bottom: 0.1rem;'>Dress Me</h3>", unsafe_allow_html=True)
 
 all_items = fetch_wardrobe()
 
@@ -278,12 +274,12 @@ with tab_swiper:
     pants = [i for i in all_items if str(i.get("category", "")).strip() == "Hose"]
     shoes = [i for i in all_items if str(i.get("category", "")).strip() == "Schuhe"]
 
-    top_1, top_2 = st.columns([1, 1], vertical_alignment="center")
+    # Kompakte obere Steuerleiste: + Jacke | Shuffle | Save (kein Konflikt unten rechts!)
+    top_1, top_2, top_3 = st.columns([1.2, 1, 1], vertical_alignment="center")
     with top_1:
-        include_jacket = st.toggle("🧥 + Jacke", value=False)
+        include_jacket = st.toggle("🧥 Jacke", value=False)
     with top_2:
         if st.button("⇅ Shuffle", use_container_width=True):
-            # Würfelt nur Kategorien neu aus, die NICHT per 🔒 gesperrt sind
             if tops and not st.session_state.get("lock_idx_top", False):
                 st.session_state["idx_top"] = random.randint(0, len(tops) - 1)
             if jackets and not st.session_state.get("lock_idx_jacket", False):
@@ -293,36 +289,37 @@ with tab_swiper:
             if shoes and not st.session_state.get("lock_idx_shoes", False):
                 st.session_state["idx_shoes"] = random.randint(0, len(shoes) - 1)
             st.rerun()
+    with top_3:
+        save_popover = st.popover("💾 Save", use_container_width=True)
 
     selected_ids = []
     if include_jacket:
-        sel_jacket = render_carousel_row("Jacke", jackets, "idx_jacket", main_width=150, side_width=38)
+        sel_jacket = render_carousel_row("Jacke", jackets, "idx_jacket", main_width=135, side_width=34)
         if sel_jacket: selected_ids.append(sel_jacket["id"])
 
-    sel_top = render_carousel_row("Oberteil", tops, "idx_top", main_width=165, side_width=42)
+    sel_top = render_carousel_row("Oberteil", tops, "idx_top", main_width=145, side_width=36)
     if sel_top: selected_ids.append(sel_top["id"])
 
-    sel_pants = render_carousel_row("Hose", pants, "idx_pants", main_width=170, side_width=40)
+    sel_pants = render_carousel_row("Hose", pants, "idx_pants", main_width=155, side_width=36)
     if sel_pants: selected_ids.append(sel_pants["id"])
 
-    sel_shoes = render_carousel_row("Schuhe", shoes, "idx_shoes", main_width=115, side_width=34)
+    sel_shoes = render_carousel_row("Schuhe", shoes, "idx_shoes", main_width=105, side_width=30)
     if sel_shoes: selected_ids.append(sel_shoes["id"])
 
-    # Kollisionsfreie Speichern-Box (linksbündig mit Platz zum roten Streamlit-Badge rechts)
-    if len(selected_ids) >= 2:
-        st.write("")
-        c_save_area, c_badge_spacer = st.columns([3.8, 1.2], vertical_alignment="center")
-        with c_save_area:
-            with st.popover("💾 Outfit speichern", use_container_width=True):
-                outfit_name = st.text_input("Name für den Look:", placeholder="z.B. Clean Uni Look")
-                if st.button("✅ Jetzt speichern", type="primary", use_container_width=True):
-                    supabase.table("saved_outfits").insert({
-                        "outfit_name": outfit_name or "Saved Look",
-                        "item_ids": selected_ids
-                    }).execute()
-                    st.success("Gespeichert im Tab '⭐ Outfits'!")
+    # Inhalt des oberen Save-Popovers befüllen
+    with save_popover:
+        if len(selected_ids) >= 2:
+            outfit_name = st.text_input("Outfit-Name:", placeholder="z.B. Clean Uni Look")
+            if st.button("✅ Speichern", type="primary", use_container_width=True):
+                supabase.table("saved_outfits").insert({
+                    "outfit_name": outfit_name or "Saved Look",
+                    "item_ids": selected_ids
+                }).execute()
+                st.success("Gespeichert!")
+        else:
+            st.caption("Mindestens 2 Teile auswählen.")
 
-# === TAB 2: KLEIDERSCHRANK-GALERIE (INKL. KATEGORIE-WECHSEL & 90°-DREHEN) ===
+# === TAB 2: KLEIDERSCHRANK-GALERIE ===
 with tab_closet:
     if not all_items:
         st.info("Dein Kleiderschrank ist noch leer. Wechsle zum Tab '➕ Upload'!")
@@ -341,7 +338,6 @@ with tab_closet:
                 with st.container(border=True):
                     st.image(item["image_url"], use_container_width=True)
                     
-                    # Direktes Ändern der Kategorie per Dropdown
                     current_cat = str(item.get("category", "Oberteil")).strip()
                     cat_index = CATEGORIES.index(current_cat) if current_cat in CATEGORIES else 0
                     new_cat = st.selectbox(
@@ -367,7 +363,7 @@ with tab_closet:
                             st.rerun()
 
         st.divider()
-        if st.button("✨ Bestehende Bilder schärfen & zuschneiden (Studio-Boost)", use_container_width=True):
+        if st.button("✨ Bestehende Bilder schärfen & zuschneiden", use_container_width=True):
             with st.spinner("Optimiere bestehende Bilder..."):
                 recrop_existing_items(all_items)
             st.success("✅ Alle Bilder optimiert!")
@@ -411,7 +407,7 @@ with tab_upload:
             success_count = 0
             for idx, file in enumerate(uploaded_files):
                 try:
-                    progress_bar.progress(idx / len(uploaded_files), text=f"✂️ Freistellen & Studio-Boost: {file.name}...")
+                    progress_bar.progress(idx / len(uploaded_files), text=f"✂️ Freistellen: {file.name}...")
                     cutout_img, png_bytes = process_and_remove_bg(file)
                     save_item_to_cloud(png_bytes, selected_category)
                     success_count += 1
@@ -419,5 +415,5 @@ with tab_upload:
                     st.error(f"❌ Fehler bei {file.name}: {e}")
             progress_bar.progress(1.0, text="✅ Durchlauf beendet!")
             if success_count > 0:
-                st.success(f"🎉 {success_count} Teil(e) perfekt zugeschnitten & gespeichert!")
+                st.success(f"🎉 {success_count} Teil(e) gespeichert!")
                 st.rerun()
